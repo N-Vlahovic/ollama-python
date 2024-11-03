@@ -26,6 +26,7 @@ def test_client_chat(httpserver: HTTPServer):
     json={
       'model': 'dummy',
       'messages': [{'role': 'user', 'content': 'Why is the sky blue?'}],
+      'tools': [],
       'stream': False,
       'format': '',
       'options': {},
@@ -73,6 +74,7 @@ def test_client_chat_stream(httpserver: HTTPServer):
     json={
       'model': 'dummy',
       'messages': [{'role': 'user', 'content': 'Why is the sky blue?'}],
+      'tools': [],
       'stream': True,
       'format': '',
       'options': {},
@@ -102,6 +104,7 @@ def test_client_chat_images(httpserver: HTTPServer):
           'images': ['iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC'],
         },
       ],
+      'tools': [],
       'stream': False,
       'format': '',
       'options': {},
@@ -134,6 +137,7 @@ def test_client_generate(httpserver: HTTPServer):
     json={
       'model': 'dummy',
       'prompt': 'Why is the sky blue?',
+      'suffix': '',
       'system': '',
       'template': '',
       'context': [],
@@ -179,6 +183,7 @@ def test_client_generate_stream(httpserver: HTTPServer):
     json={
       'model': 'dummy',
       'prompt': 'Why is the sky blue?',
+      'suffix': '',
       'system': '',
       'template': '',
       'context': [],
@@ -207,6 +212,7 @@ def test_client_generate_images(httpserver: HTTPServer):
     json={
       'model': 'dummy',
       'prompt': 'Why is the sky blue?',
+      'suffix': '',
       'system': '',
       'template': '',
       'context': [],
@@ -334,6 +340,7 @@ def test_client_create_path(httpserver: HTTPServer):
       'name': 'dummy',
       'modelfile': 'FROM @sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n',
       'stream': False,
+      'quantize': None,
     },
   ).respond_with_json({})
 
@@ -357,6 +364,7 @@ def test_client_create_path_relative(httpserver: HTTPServer):
       'name': 'dummy',
       'modelfile': 'FROM @sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n',
       'stream': False,
+      'quantize': None,
     },
   ).respond_with_json({})
 
@@ -389,6 +397,7 @@ def test_client_create_path_user_home(httpserver: HTTPServer, userhomedir):
       'name': 'dummy',
       'modelfile': 'FROM @sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n',
       'stream': False,
+      'quantize': None,
     },
   ).respond_with_json({})
 
@@ -412,6 +421,7 @@ def test_client_create_modelfile(httpserver: HTTPServer):
       'name': 'dummy',
       'modelfile': 'FROM @sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n',
       'stream': False,
+      'quantize': None,
     },
   ).respond_with_json({})
 
@@ -442,6 +452,7 @@ PARAMETER stop [/INST]
 PARAMETER stop <<SYS>>
 PARAMETER stop <</SYS>>''',
       'stream': False,
+      'quantize': None,
     },
   ).respond_with_json({})
 
@@ -478,6 +489,7 @@ def test_client_create_from_library(httpserver: HTTPServer):
       'name': 'dummy',
       'modelfile': 'FROM llama2',
       'stream': False,
+      'quantize': None,
     },
   ).respond_with_json({})
 
@@ -508,6 +520,20 @@ def test_client_create_blob_exists(httpserver: HTTPServer):
     assert response == 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 
 
+def test_client_delete(httpserver: HTTPServer):
+  httpserver.expect_ordered_request(PrefixPattern('/api/delete'), method='DELETE').respond_with_response(Response(status=200))
+  client = Client(httpserver.url_for('/api/delete'))
+  response = client.delete('dummy')
+  assert response == {'status': 'success'}
+
+
+def test_client_copy(httpserver: HTTPServer):
+  httpserver.expect_ordered_request(PrefixPattern('/api/copy'), method='POST').respond_with_response(Response(status=200))
+  client = Client(httpserver.url_for('/api/copy'))
+  response = client.copy('dum', 'dummer')
+  assert response == {'status': 'success'}
+
+
 @pytest.mark.asyncio
 async def test_async_client_chat(httpserver: HTTPServer):
   httpserver.expect_ordered_request(
@@ -516,6 +542,7 @@ async def test_async_client_chat(httpserver: HTTPServer):
     json={
       'model': 'dummy',
       'messages': [{'role': 'user', 'content': 'Why is the sky blue?'}],
+      'tools': [],
       'stream': False,
       'format': '',
       'options': {},
@@ -554,6 +581,7 @@ async def test_async_client_chat_stream(httpserver: HTTPServer):
     json={
       'model': 'dummy',
       'messages': [{'role': 'user', 'content': 'Why is the sky blue?'}],
+      'tools': [],
       'stream': True,
       'format': '',
       'options': {},
@@ -584,6 +612,7 @@ async def test_async_client_chat_images(httpserver: HTTPServer):
           'images': ['iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC'],
         },
       ],
+      'tools': [],
       'stream': False,
       'format': '',
       'options': {},
@@ -607,6 +636,7 @@ async def test_async_client_generate(httpserver: HTTPServer):
     json={
       'model': 'dummy',
       'prompt': 'Why is the sky blue?',
+      'suffix': '',
       'system': '',
       'template': '',
       'context': [],
@@ -647,6 +677,7 @@ async def test_async_client_generate_stream(httpserver: HTTPServer):
     json={
       'model': 'dummy',
       'prompt': 'Why is the sky blue?',
+      'suffix': '',
       'system': '',
       'template': '',
       'context': [],
@@ -676,6 +707,7 @@ async def test_async_client_generate_images(httpserver: HTTPServer):
     json={
       'model': 'dummy',
       'prompt': 'Why is the sky blue?',
+      'suffix': '',
       'system': '',
       'template': '',
       'context': [],
@@ -798,6 +830,7 @@ async def test_async_client_create_path(httpserver: HTTPServer):
       'name': 'dummy',
       'modelfile': 'FROM @sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n',
       'stream': False,
+      'quantize': None,
     },
   ).respond_with_json({})
 
@@ -822,6 +855,7 @@ async def test_async_client_create_path_relative(httpserver: HTTPServer):
       'name': 'dummy',
       'modelfile': 'FROM @sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n',
       'stream': False,
+      'quantize': None,
     },
   ).respond_with_json({})
 
@@ -846,6 +880,7 @@ async def test_async_client_create_path_user_home(httpserver: HTTPServer, userho
       'name': 'dummy',
       'modelfile': 'FROM @sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n',
       'stream': False,
+      'quantize': None,
     },
   ).respond_with_json({})
 
@@ -870,6 +905,7 @@ async def test_async_client_create_modelfile(httpserver: HTTPServer):
       'name': 'dummy',
       'modelfile': 'FROM @sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n',
       'stream': False,
+      'quantize': None,
     },
   ).respond_with_json({})
 
@@ -901,6 +937,7 @@ PARAMETER stop [/INST]
 PARAMETER stop <<SYS>>
 PARAMETER stop <</SYS>>''',
       'stream': False,
+      'quantize': None,
     },
   ).respond_with_json({})
 
@@ -938,6 +975,7 @@ async def test_async_client_create_from_library(httpserver: HTTPServer):
       'name': 'dummy',
       'modelfile': 'FROM llama2',
       'stream': False,
+      'quantize': None,
     },
   ).respond_with_json({})
 
@@ -968,3 +1006,19 @@ async def test_async_client_create_blob_exists(httpserver: HTTPServer):
   with tempfile.NamedTemporaryFile() as blob:
     response = await client._create_blob(blob.name)
     assert response == 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+
+
+@pytest.mark.asyncio
+async def test_async_client_delete(httpserver: HTTPServer):
+  httpserver.expect_ordered_request(PrefixPattern('/api/delete'), method='DELETE').respond_with_response(Response(status=200))
+  client = AsyncClient(httpserver.url_for('/api/delete'))
+  response = await client.delete('dummy')
+  assert response == {'status': 'success'}
+
+
+@pytest.mark.asyncio
+async def test_async_client_copy(httpserver: HTTPServer):
+  httpserver.expect_ordered_request(PrefixPattern('/api/copy'), method='POST').respond_with_response(Response(status=200))
+  client = AsyncClient(httpserver.url_for('/api/copy'))
+  response = await client.copy('dum', 'dummer')
+  assert response == {'status': 'success'}

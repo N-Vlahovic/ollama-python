@@ -1,3 +1,4 @@
+import ipaddress
 import os
 import io
 import json
@@ -7,10 +8,11 @@ import platform
 import urllib.parse
 from os import PathLike
 from pathlib import Path
+from copy import deepcopy
 from hashlib import sha256
 from base64 import b64encode, b64decode
 
-from typing import Any, AnyStr, Union, Optional, Sequence, Mapping, Literal
+from typing import Any, AnyStr, Union, Optional, Sequence, Mapping, Literal, overload
 
 import sys
 
@@ -26,7 +28,7 @@ try:
 except metadata.PackageNotFoundError:
   __version__ = '0.0.0'
 
-from ollama._types import Message, Options, RequestError, ResponseError
+from ollama._types import Message, Options, RequestError, ResponseError, Tool
 
 
 class BaseClient:
@@ -96,10 +98,45 @@ class Client(BaseClient):
   ) -> Union[Mapping[str, Any], Iterator[Mapping[str, Any]]]:
     return self._stream(*args, **kwargs) if stream else self._request(*args, **kwargs).json()
 
+  @overload
   def generate(
     self,
     model: str = '',
     prompt: str = '',
+    suffix: str = '',
+    system: str = '',
+    template: str = '',
+    context: Optional[Sequence[int]] = None,
+    stream: Literal[False] = False,
+    raw: bool = False,
+    format: Literal['', 'json'] = '',
+    images: Optional[Sequence[AnyStr]] = None,
+    options: Optional[Options] = None,
+    keep_alive: Optional[Union[float, str]] = None,
+  ) -> Mapping[str, Any]: ...
+
+  @overload
+  def generate(
+    self,
+    model: str = '',
+    prompt: str = '',
+    suffix: str = '',
+    system: str = '',
+    template: str = '',
+    context: Optional[Sequence[int]] = None,
+    stream: Literal[True] = True,
+    raw: bool = False,
+    format: Literal['', 'json'] = '',
+    images: Optional[Sequence[AnyStr]] = None,
+    options: Optional[Options] = None,
+    keep_alive: Optional[Union[float, str]] = None,
+  ) -> Iterator[Mapping[str, Any]]: ...
+
+  def generate(
+    self,
+    model: str = '',
+    prompt: str = '',
+    suffix: str = '',
     system: str = '',
     template: str = '',
     context: Optional[Sequence[int]] = None,
@@ -129,6 +166,7 @@ class Client(BaseClient):
       json={
         'model': model,
         'prompt': prompt,
+        'suffix': suffix,
         'system': system,
         'template': template,
         'context': context or [],
@@ -142,10 +180,35 @@ class Client(BaseClient):
       stream=stream,
     )
 
+  @overload
   def chat(
     self,
     model: str = '',
     messages: Optional[Sequence[Message]] = None,
+    tools: Optional[Sequence[Tool]] = None,
+    stream: Literal[False] = False,
+    format: Literal['', 'json'] = '',
+    options: Optional[Options] = None,
+    keep_alive: Optional[Union[float, str]] = None,
+  ) -> Mapping[str, Any]: ...
+
+  @overload
+  def chat(
+    self,
+    model: str = '',
+    messages: Optional[Sequence[Message]] = None,
+    tools: Optional[Sequence[Tool]] = None,
+    stream: Literal[True] = True,
+    format: Literal['', 'json'] = '',
+    options: Optional[Options] = None,
+    keep_alive: Optional[Union[float, str]] = None,
+  ) -> Iterator[Mapping[str, Any]]: ...
+
+  def chat(
+    self,
+    model: str = '',
+    messages: Optional[Sequence[Message]] = None,
+    tools: Optional[Sequence[Tool]] = None,
     stream: bool = False,
     format: Literal['', 'json'] = '',
     options: Optional[Options] = None,
@@ -164,13 +227,9 @@ class Client(BaseClient):
     if not model:
       raise RequestError('must provide a model')
 
+    messages = deepcopy(messages)
+
     for message in messages or []:
-      if not isinstance(message, dict):
-        raise TypeError('messages must be a list of Message or dict-like objects')
-      if not (role := message.get('role')) or role not in ['system', 'user', 'assistant']:
-        raise RequestError('messages must contain a role and it must be one of "system", "user", or "assistant"')
-      if not message.get('content'):
-        raise RequestError('messages must contain content')
       if images := message.get('images'):
         message['images'] = [_encode_image(image) for image in images]
 
@@ -180,6 +239,7 @@ class Client(BaseClient):
       json={
         'model': model,
         'messages': messages,
+        'tools': tools or [],
         'stream': stream,
         'format': format,
         'options': options or {},
@@ -188,13 +248,39 @@ class Client(BaseClient):
       stream=stream,
     )
 
+  def embed(
+    self,
+    model: str = '',
+    input: Union[str, Sequence[AnyStr]] = '',
+    truncate: bool = True,
+    options: Optional[Options] = None,
+    keep_alive: Optional[Union[float, str]] = None,
+  ) -> Mapping[str, Any]:
+    if not model:
+      raise RequestError('must provide a model')
+
+    return self._request(
+      'POST',
+      '/api/embed',
+      json={
+        'model': model,
+        'input': input,
+        'truncate': truncate,
+        'options': options or {},
+        'keep_alive': keep_alive,
+      },
+    ).json()
+
   def embeddings(
     self,
     model: str = '',
     prompt: str = '',
     options: Optional[Options] = None,
     keep_alive: Optional[Union[float, str]] = None,
-  ) -> Sequence[float]:
+  ) -> Mapping[str, Sequence[float]]:
+    """
+    Deprecated in favor of `embed`.
+    """
     return self._request(
       'POST',
       '/api/embeddings',
@@ -205,6 +291,22 @@ class Client(BaseClient):
         'keep_alive': keep_alive,
       },
     ).json()
+
+  @overload
+  def pull(
+    self,
+    model: str,
+    insecure: bool = False,
+    stream: Literal[False] = False,
+  ) -> Mapping[str, Any]: ...
+
+  @overload
+  def pull(
+    self,
+    model: str,
+    insecure: bool = False,
+    stream: Literal[True] = True,
+  ) -> Iterator[Mapping[str, Any]]: ...
 
   def pull(
     self,
@@ -228,6 +330,22 @@ class Client(BaseClient):
       stream=stream,
     )
 
+  @overload
+  def push(
+    self,
+    model: str,
+    insecure: bool = False,
+    stream: Literal[False] = False,
+  ) -> Mapping[str, Any]: ...
+
+  @overload
+  def push(
+    self,
+    model: str,
+    insecure: bool = False,
+    stream: Literal[True] = True,
+  ) -> Iterator[Mapping[str, Any]]: ...
+
   def push(
     self,
     model: str,
@@ -250,11 +368,32 @@ class Client(BaseClient):
       stream=stream,
     )
 
+  @overload
   def create(
     self,
     model: str,
     path: Optional[Union[str, PathLike]] = None,
     modelfile: Optional[str] = None,
+    quantize: Optional[str] = None,
+    stream: Literal[False] = False,
+  ) -> Mapping[str, Any]: ...
+
+  @overload
+  def create(
+    self,
+    model: str,
+    path: Optional[Union[str, PathLike]] = None,
+    modelfile: Optional[str] = None,
+    quantize: Optional[str] = None,
+    stream: Literal[True] = True,
+  ) -> Iterator[Mapping[str, Any]]: ...
+
+  def create(
+    self,
+    model: str,
+    path: Optional[Union[str, PathLike]] = None,
+    modelfile: Optional[str] = None,
+    quantize: Optional[str] = None,
     stream: bool = False,
   ) -> Union[Mapping[str, Any], Iterator[Mapping[str, Any]]]:
     """
@@ -276,6 +415,7 @@ class Client(BaseClient):
         'name': model,
         'modelfile': modelfile,
         'stream': stream,
+        'quantize': quantize,
       },
       stream=stream,
     )
@@ -334,6 +474,9 @@ class Client(BaseClient):
   def show(self, model: str) -> Mapping[str, Any]:
     return self._request('POST', '/api/show', json={'name': model}).json()
 
+  def ps(self) -> Mapping[str, Any]:
+    return self._request('GET', '/api/ps').json()
+
 
 class AsyncClient(BaseClient):
   def __init__(self, host: Optional[str] = None, **kwargs) -> None:
@@ -355,7 +498,7 @@ class AsyncClient(BaseClient):
         try:
           r.raise_for_status()
         except httpx.HTTPStatusError as e:
-          e.response.read()
+          await e.response.aread()
           raise ResponseError(e.response.text, e.response.status_code) from None
 
         async for line in r.aiter_lines():
@@ -378,10 +521,45 @@ class AsyncClient(BaseClient):
     response = await self._request(*args, **kwargs)
     return response.json()
 
+  @overload
   async def generate(
     self,
     model: str = '',
     prompt: str = '',
+    suffix: str = '',
+    system: str = '',
+    template: str = '',
+    context: Optional[Sequence[int]] = None,
+    stream: Literal[False] = False,
+    raw: bool = False,
+    format: Literal['', 'json'] = '',
+    images: Optional[Sequence[AnyStr]] = None,
+    options: Optional[Options] = None,
+    keep_alive: Optional[Union[float, str]] = None,
+  ) -> Mapping[str, Any]: ...
+
+  @overload
+  async def generate(
+    self,
+    model: str = '',
+    prompt: str = '',
+    suffix: str = '',
+    system: str = '',
+    template: str = '',
+    context: Optional[Sequence[int]] = None,
+    stream: Literal[True] = True,
+    raw: bool = False,
+    format: Literal['', 'json'] = '',
+    images: Optional[Sequence[AnyStr]] = None,
+    options: Optional[Options] = None,
+    keep_alive: Optional[Union[float, str]] = None,
+  ) -> AsyncIterator[Mapping[str, Any]]: ...
+
+  async def generate(
+    self,
+    model: str = '',
+    prompt: str = '',
+    suffix: str = '',
     system: str = '',
     template: str = '',
     context: Optional[Sequence[int]] = None,
@@ -410,6 +588,7 @@ class AsyncClient(BaseClient):
       json={
         'model': model,
         'prompt': prompt,
+        'suffix': suffix,
         'system': system,
         'template': template,
         'context': context or [],
@@ -423,10 +602,35 @@ class AsyncClient(BaseClient):
       stream=stream,
     )
 
+  @overload
   async def chat(
     self,
     model: str = '',
     messages: Optional[Sequence[Message]] = None,
+    tools: Optional[Sequence[Tool]] = None,
+    stream: Literal[False] = False,
+    format: Literal['', 'json'] = '',
+    options: Optional[Options] = None,
+    keep_alive: Optional[Union[float, str]] = None,
+  ) -> Mapping[str, Any]: ...
+
+  @overload
+  async def chat(
+    self,
+    model: str = '',
+    messages: Optional[Sequence[Message]] = None,
+    tools: Optional[Sequence[Tool]] = None,
+    stream: Literal[True] = True,
+    format: Literal['', 'json'] = '',
+    options: Optional[Options] = None,
+    keep_alive: Optional[Union[float, str]] = None,
+  ) -> AsyncIterator[Mapping[str, Any]]: ...
+
+  async def chat(
+    self,
+    model: str = '',
+    messages: Optional[Sequence[Message]] = None,
+    tools: Optional[Sequence[Tool]] = None,
     stream: bool = False,
     format: Literal['', 'json'] = '',
     options: Optional[Options] = None,
@@ -444,13 +648,9 @@ class AsyncClient(BaseClient):
     if not model:
       raise RequestError('must provide a model')
 
+    messages = deepcopy(messages)
+
     for message in messages or []:
-      if not isinstance(message, dict):
-        raise TypeError('messages must be a list of strings')
-      if not (role := message.get('role')) or role not in ['system', 'user', 'assistant']:
-        raise RequestError('messages must contain a role and it must be one of "system", "user", or "assistant"')
-      if not message.get('content'):
-        raise RequestError('messages must contain content')
       if images := message.get('images'):
         message['images'] = [_encode_image(image) for image in images]
 
@@ -460,6 +660,7 @@ class AsyncClient(BaseClient):
       json={
         'model': model,
         'messages': messages,
+        'tools': tools or [],
         'stream': stream,
         'format': format,
         'options': options or {},
@@ -468,13 +669,41 @@ class AsyncClient(BaseClient):
       stream=stream,
     )
 
+  async def embed(
+    self,
+    model: str = '',
+    input: Union[str, Sequence[AnyStr]] = '',
+    truncate: bool = True,
+    options: Optional[Options] = None,
+    keep_alive: Optional[Union[float, str]] = None,
+  ) -> Mapping[str, Any]:
+    if not model:
+      raise RequestError('must provide a model')
+
+    response = await self._request(
+      'POST',
+      '/api/embed',
+      json={
+        'model': model,
+        'input': input,
+        'truncate': truncate,
+        'options': options or {},
+        'keep_alive': keep_alive,
+      },
+    )
+
+    return response.json()
+
   async def embeddings(
     self,
     model: str = '',
     prompt: str = '',
     options: Optional[Options] = None,
     keep_alive: Optional[Union[float, str]] = None,
-  ) -> Sequence[float]:
+  ) -> Mapping[str, Sequence[float]]:
+    """
+    Deprecated in favor of `embed`.
+    """
     response = await self._request(
       'POST',
       '/api/embeddings',
@@ -487,6 +716,22 @@ class AsyncClient(BaseClient):
     )
 
     return response.json()
+
+  @overload
+  async def pull(
+    self,
+    model: str,
+    insecure: bool = False,
+    stream: Literal[False] = False,
+  ) -> Mapping[str, Any]: ...
+
+  @overload
+  async def pull(
+    self,
+    model: str,
+    insecure: bool = False,
+    stream: Literal[True] = True,
+  ) -> AsyncIterator[Mapping[str, Any]]: ...
 
   async def pull(
     self,
@@ -510,6 +755,22 @@ class AsyncClient(BaseClient):
       stream=stream,
     )
 
+  @overload
+  async def push(
+    self,
+    model: str,
+    insecure: bool = False,
+    stream: Literal[False] = False,
+  ) -> Mapping[str, Any]: ...
+
+  @overload
+  async def push(
+    self,
+    model: str,
+    insecure: bool = False,
+    stream: Literal[True] = True,
+  ) -> AsyncIterator[Mapping[str, Any]]: ...
+
   async def push(
     self,
     model: str,
@@ -532,11 +793,32 @@ class AsyncClient(BaseClient):
       stream=stream,
     )
 
+  @overload
   async def create(
     self,
     model: str,
     path: Optional[Union[str, PathLike]] = None,
     modelfile: Optional[str] = None,
+    quantize: Optional[str] = None,
+    stream: Literal[False] = False,
+  ) -> Mapping[str, Any]: ...
+
+  @overload
+  async def create(
+    self,
+    model: str,
+    path: Optional[Union[str, PathLike]] = None,
+    modelfile: Optional[str] = None,
+    quantize: Optional[str] = None,
+    stream: Literal[True] = True,
+  ) -> AsyncIterator[Mapping[str, Any]]: ...
+
+  async def create(
+    self,
+    model: str,
+    path: Optional[Union[str, PathLike]] = None,
+    modelfile: Optional[str] = None,
+    quantize: Optional[str] = None,
     stream: bool = False,
   ) -> Union[Mapping[str, Any], AsyncIterator[Mapping[str, Any]]]:
     """
@@ -558,6 +840,7 @@ class AsyncClient(BaseClient):
         'name': model,
         'modelfile': modelfile,
         'stream': stream,
+        'quantize': quantize,
       },
       stream=stream,
     )
@@ -623,6 +906,10 @@ class AsyncClient(BaseClient):
 
   async def show(self, model: str) -> Mapping[str, Any]:
     response = await self._request('POST', '/api/show', json={'name': model})
+    return response.json()
+
+  async def ps(self) -> Mapping[str, Any]:
+    response = await self._request('GET', '/api/ps')
     return response.json()
 
 
@@ -707,6 +994,36 @@ def _parse_host(host: Optional[str]) -> str:
   'http://example.com:11434'
   >>> _parse_host('example.com:56789/')
   'http://example.com:56789'
+  >>> _parse_host('example.com/path')
+  'http://example.com:11434/path'
+  >>> _parse_host('example.com:56789/path')
+  'http://example.com:56789/path'
+  >>> _parse_host('https://example.com:56789/path')
+  'https://example.com:56789/path'
+  >>> _parse_host('example.com:56789/path/')
+  'http://example.com:56789/path'
+  >>> _parse_host('[0001:002:003:0004::1]')
+  'http://[0001:002:003:0004::1]:11434'
+  >>> _parse_host('[0001:002:003:0004::1]:56789')
+  'http://[0001:002:003:0004::1]:56789'
+  >>> _parse_host('http://[0001:002:003:0004::1]')
+  'http://[0001:002:003:0004::1]:80'
+  >>> _parse_host('https://[0001:002:003:0004::1]')
+  'https://[0001:002:003:0004::1]:443'
+  >>> _parse_host('https://[0001:002:003:0004::1]:56789')
+  'https://[0001:002:003:0004::1]:56789'
+  >>> _parse_host('[0001:002:003:0004::1]/')
+  'http://[0001:002:003:0004::1]:11434'
+  >>> _parse_host('[0001:002:003:0004::1]:56789/')
+  'http://[0001:002:003:0004::1]:56789'
+  >>> _parse_host('[0001:002:003:0004::1]/path')
+  'http://[0001:002:003:0004::1]:11434/path'
+  >>> _parse_host('[0001:002:003:0004::1]:56789/path')
+  'http://[0001:002:003:0004::1]:56789/path'
+  >>> _parse_host('https://[0001:002:003:0004::1]:56789/path')
+  'https://[0001:002:003:0004::1]:56789/path'
+  >>> _parse_host('[0001:002:003:0004::1]:56789/path/')
+  'http://[0001:002:003:0004::1]:56789/path'
   """
 
   host, port = host or '', 11434
@@ -721,5 +1038,15 @@ def _parse_host(host: Optional[str]) -> str:
   split = urllib.parse.urlsplit('://'.join([scheme, hostport]))
   host = split.hostname or '127.0.0.1'
   port = split.port or port
+
+  # Fix missing square brackets for IPv6 from urlsplit
+  try:
+    if isinstance(ipaddress.ip_address(host), ipaddress.IPv6Address):
+      host = f'[{host}]'
+  except ValueError:
+    ...
+
+  if path := split.path.strip('/'):
+    return f'{scheme}://{host}:{port}/{path}'
 
   return f'{scheme}://{host}:{port}'
